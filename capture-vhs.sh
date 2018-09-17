@@ -14,6 +14,36 @@ noise_stronger=hqdn3d=10:10:14:14
 # my pal encodings have a noisy border around them containing no real image data. black it out!
 border_boxes=drawbox=0:0:18:0:Black:max,drawbox=iw-18:0:18:0:Black:max,drawbox=0:0:0:4:Black:max,drawbox=0:ih-4:iw:0:Black:max
 
+! PARSED=$(getopt --options m,s,r --longoptions=mono,stereo,raw -- "$@")
+if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
+  exit 2
+fi
+eval set -- "$PARSED"
+audio=stereo
+while true; do
+  case "$1" in
+    -m|--mono)
+      audio=mono
+      shift
+      ;;
+    -s|--stereo)
+      audio=stereo
+      shift
+      ;;
+    -o|--output)
+      outFile="$2"
+      shift 2
+      ;;
+    -r|--raw)
+      raw=true
+      shift
+      ;;
+    --)
+      shift
+      break
+      ;;
+    esac
+done
 
 if [ -f .last_metadata ] ; then
 	  . .last_metadata
@@ -37,7 +67,7 @@ echo
 
 VIDEO_SLUG=$(echo $VIDEO_TITLE | iconv -t ascii//TRANSLIT | sed -r s/[^a-zA-Z0-9]+/-/g | sed -r s/^-+\|-+$//g | tr A-Z a-z)
 
-filename="${VIDEO_DATE}-${VIDEO_SLUG}.mp4"
+filename="${VIDEO_DATE}-${VIDEO_SLUG}.mkv"
 metaname="${filename%.*}.txt"
 
 cat <<EOF > $metaname
@@ -60,8 +90,15 @@ test -f $filename && mv -v --backup -t backup $filename
 
 fargs=" -loglevel warning -stats -report  -thread_queue_size 1024 -f alsa -i hw:1,0"
 fargs+=" -thread_queue_size 1024 -f video4linux2 -standard PAL-I -i /dev/video0"
-fargs+=" -b:a 160k"
-fargs+=" -vcodec libx264 -preset faster -aspect 4:3 -pix_fmt yuv420p -vf yadif=1:1 -tune film -crf 12"
+fargs+=" -c:a libopus -b:a 160k"
+if [ $audio == "mono" ] ; then
+  fargs+=" -ac 1"
+fi
+if [ "$raw" == true ] ; then
+	fargs+=" -vcodec libx264 -preset faster -aspect 4:3 -tune film -crf 0 -profile:v high444 -level:v 4.1 -g 33 -flags +ildct+ilme -pix_fmt yuv422p "
+else
+	fargs+=" -vcodec libx264 -preset faster -aspect 4:3 -pix_fmt yuv420p -vf yadif=1:1 -tune film -crf 10"
+fi
 fargs+=" -t ${VIDEO_LENGTH}:00"
 
 # https://kdenlive.org/en/project/adding-meta-data-to-mp4-video/
