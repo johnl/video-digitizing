@@ -7,7 +7,7 @@ I did LOADS of testing to find a good set of configs to produce useful videos.
 These scripts encapsulate the results of my experimentation. They might be
 helpful to someone.
 
-they try to avoid overwriting or deleting any files, even if you re-run a
+They try to avoid overwriting or deleting any files, even if you re-run a
 capture. I think it's better to waste disk space than chuck something away
 accidentally (especially as you MIGHT find an old tape deteriorates when you
 play it!). Check the `backup/` and `tmp/` directories to clean up.
@@ -17,19 +17,21 @@ tell me how you feel.
 
 ## Dependencies
 
-Bash, ffmpeg, iconv, sed, tr.
+Bash, ffmpeg, iconv, sed, tr. I recommend using John Van Sickle's static ffmpeg
+builds to get the latest versions (which have the latest vp9 codec libs and have
+much improved webm metadata support). https://johnvansickle.com/ffmpeg/
 
 ## Process
 
 I used a separate machine that I didn't use for much else, so I could leave it
-captureing and encoding for long periods of time without disturbing it. Logged
+capturing and encoding for long periods of time without disturbing it. Logged
 in on the console rather than any gui. Sat the physical video players next to it.
 
 If you have a lot of tapes, setup an inbox and and outbox so you don't get
 confused and waste time digitizing multiple tapes.
 
-I captured several tapes during the day, and then ran the longer final encoding
-work overnight.
+I captured several tapes and then ran the longer filtering and compression stage
+(finalizing) in a big batch.
 
 ## Capture
 
@@ -37,15 +39,15 @@ use `capture-vhs.sh` to digitize a video in basically lossless format. it'll ask
 you some questions about the capture which it'll use to generate the filename
 and it'll store the rest in the video metadata.
 
-it will deinterlate pal to 50fps. the resulting file will be around 20G per
-hour, depending how noisy the video is.
+I recommend using `--raw` to do as little pre-processing as possible (but will
+result in a large file, roughly 40G per hour).
 
-### cpu power
+If you know your video source is in mono, use the `--mono` option.
 
-you'll need a fair bit of cpu power to deinterlace and encode on the fly, but I
-had trouble deinterlacing well post-capture. so I hope you have enough cpu power!
+### CPU power
 
-If you see a LOT of errors like this:
+If you're not using raw, you'll need a fair bit of cpu power to deinterlace and
+encode on the fly. If you see a LOT of errors like this:
 
 ```
 PTS -1443966142109, next:2230133221 invalid dropping st:0
@@ -65,7 +67,10 @@ Don't run any other cpu intensive tasks.
 Make sure the user you're running the scripts as has permission to set high
 priorities on processes (see `/etc/security/limits.conf` :)
 
-### duration
+If you're using the `--raw` option this most likely won't be an issue, though
+disk space might be! See below.
+
+### Duration
 
 it will stop digitizing at the duration you specify. Most vhs tapes are a minute
 or two longer than what they say (so 45mins is 47). And any long play videos
@@ -74,33 +79,57 @@ crop it later, rather than waste time and risk tapes needing to redigitize.
 
 ## Finalizing
 
-use `finalize-video.sh` to take the lossless version and create two copies, one
-higher quality "archive" version in x265 for and one medium quality "final"
-version in x264.
+use `finalize-video.sh` to take the lossless version and produce a final high
+quality archival version using the VP9 codec.
 
-Basically, I couldn't find a good compromise between quality, file size and
-*compatibility on players* so I went with two files.
+The first argument is the filename of file to process.
 
-use the archive one if you can as it's higher quality (and might even be smaller
-in size!). But is uses the x265 codec which isn't as well supported (and for the
-record, is a fair bit slower to do encoding!).
+You can also specify various options:
 
-use the final one (x264) for sticking on a bluray or dvd that should play in
-most bluray/dvd players, or on a USB stick that will play on most smart TVs now.
+``--time-start`` and ``--time-end`` specify the timestamps to start and end
+encoding, in case you have some blank video at the start and end of your
+capture.
 
-once this has run and you're happy you can delete the first large "lossless"
-version if you need the space. The archive version should be good enough.
+### Deinterlacing
 
-### arguments
+The script will use `bwdif` deinterlace filter by default, configured for
+standard PAL-I interlacing. I found bwdif to 25fps to be the best option for the
+usually fairly noisy VHS captures I'm dealing with. Other interlaces and modes
+that generate 50fps end up with pretty strobing noise patterns that encode very
+poorly.
 
-first argument is the filename of the lossless version.
+### Denoising
 
-second argument is optional and is the the duration of the video (in case the
-capture you have is longer than the actual video content).
+If your video is visually noisy, which is almost certain given old VHS video
+tapes, use the ``--denoise=weak`` or ``--denoise=strong`` options to apply a
+denoising filter. It's definitely worth denoising because otherwise the codec
+has to do a lot of work to encode the noise, so the file size will be large and
+the quality will suffer. It's pointless encoding all that noise.
 
-third argument is the start position in case the actual video content doesn't
-start straight away. FIXME: check this does the right thing when combined with
-duration!)
+After comparing lots of denoisers, I found the nlmeans filter to be far
+superior, but it is ridiculously slow. It's definitely worth it but it slowed
+down my encoding by a factor of 10 and doesn't use multiple cores very
+effectively. Expect denoising an hour of video to take 20-30 hours.
+
+I mostly use weak denoising, but on use strong when things are particularly bad
+quality.
+
+### Quality
+
+I did loads of work to compare various quality settings for VP9 and settled on a
+crf of `28`. I could find no perceptible improvement in quality by going lower
+than `28`. It produces files that are roughly 1-2G per hour of video.
+
+If you want to increase or decrease quality you can specify your own quality
+with `--crf`. Lower the number to increase quality, raise the number to decrease
+quality.
+
+### Borders
+
+all my VHS videos has a noisy edge with no actual video but was distracting and
+increased the final video size. So the script adds a few pixels of black borders
+to tidy that up. Depending on a few factors, it does risk covering up some a few
+pixels of real video though so you can disable that with `--no-border`
 
 ## Other tools
 
